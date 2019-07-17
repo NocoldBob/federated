@@ -31,6 +31,12 @@ container for the trainable and non-trainable variables of a `Model`.
 
 ## Functions
 
+[`broadcast_from_encoder_fn(...)`](../../tff/learning/framework/broadcast_from_encoder_fn.md):
+Builds `StatefulBroadcastFn` for `values`.
+
+[`broadcast_from_model_fn_encoder_fn(...)`](../../tff/learning/framework/broadcast_from_model_fn_encoder_fn.md):
+Builds `StatefulBroadcastFn` for weights of model returned by `model_fn`.
+
 [`build_model_delta_optimizer_process(...)`](../../tff/learning/framework/build_model_delta_optimizer_process.md):
 Constructs
 <a href="../../tff/utils/IterativeProcess.md"><code>tff.utils.IterativeProcess</code></a>

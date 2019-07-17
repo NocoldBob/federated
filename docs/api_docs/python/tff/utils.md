@@ -33,6 +33,9 @@ container for a stateful broadcast function.
 [`assign(...)`](../tff/utils/assign.md): Creates an op that assigns `target`
 from `source`.
 
+[`build_encoded_broadcast(...)`](../tff/utils/build_encoded_broadcast.md):
+Builds `StatefulBroadcastFn` for `values`, to be encoded by `encoders`.
+
 [`federated_max(...)`](../tff/utils/federated_max.md): Aggregation to find the
 maximum value from the <a href="../tff.md#CLIENTS"><code>tff.CLIENTS</code></a>.
 
