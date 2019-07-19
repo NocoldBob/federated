@@ -36,6 +36,50 @@ from tensorflow_federated.python.core.impl import type_serialization
 from tensorflow_federated.python.tensorflow_libs import graph_merge
 
 
+def prune_tensorflow_proto(proto):
+  """Extracts subgraph from `proto` preserving parameter, result and initialize.
+
+  Args:
+    proto: Instance of `pb.Computation` of the `tensorflow` variety whose
+      `graphdef` attribute we wish to prune of extraneous ops.
+
+  Returns:
+    A transformed instance of `pb.Computation` of the `tensorflow` variety,
+    whose `graphdef` attribute contains only ops which can reach the
+    parameter or result bindings, or initialize op.
+  """
+  py_typecheck.check_type(proto, pb.Computation)
+  if proto.WhichOneof('computation') != 'tensorflow':
+    raise TypeError
+  if proto.tensorflow.parameter.WhichOneof('binding'):
+    parameter_tensor_names = graph_utils.extract_tensor_names_from_binding(
+        proto.tensorflow.parameter)
+    parameter_names = [
+        ':'.join(x.split(':')[:-1]) for x in parameter_tensor_names
+    ]
+  else:
+    parameter_names = []
+  return_tensor_names = graph_utils.extract_tensor_names_from_binding(
+      proto.tensorflow.result)
+  return_names = [':'.join(x.split(':')[:-1]) for x in return_tensor_names]
+  graph_def = serialization_utils.unpack_graph_def(proto.tensorflow.graph_def)
+  init_op_name = proto.tensorflow.initialize_op
+  if init_op_name:
+    names_to_preserve = parameter_names + return_names + [init_op_name]
+  else:
+    names_to_preserve = parameter_names + return_names
+  subgraph_def = tf.compat.v1.graph_util.extract_sub_graph(
+      graph_def, names_to_preserve)
+  pruned_proto = pb.Computation(
+      type=proto.type,
+      tensorflow=pb.TensorFlow(
+          graph_def=serialization_utils.pack_graph_def(subgraph_def),
+          initialize_op=proto.tensorflow.initialize_op,
+          parameter=proto.tensorflow.parameter,
+          result=proto.tensorflow.result))
+  return pruned_proto
+
+
 def select_graph_output(comp, name=None, index=None):
   r"""Makes `CompiledComputation` with same input as `comp` and output `output`.
 
@@ -113,7 +157,8 @@ def select_graph_output(comp, name=None, index=None):
           initialize_op=proto.tensorflow.initialize_op,
           parameter=proto.tensorflow.parameter,
           result=result))
-  return computation_building_blocks.CompiledComputation(selected_proto)
+  pruned_proto = prune_tensorflow_proto(selected_proto)
+  return computation_building_blocks.CompiledComputation(pruned_proto)
 
 
 def permute_graph_inputs(comp, input_permutation):
@@ -222,7 +267,9 @@ def permute_graph_inputs(comp, input_permutation):
               tuple=pb.TensorFlow.NamedTupleBinding(
                   element=new_parameter_bindings)),
           result=proto.tensorflow.result))
-  return computation_building_blocks.CompiledComputation(permuted_proto)
+
+  pruned_proto = prune_tensorflow_proto(permuted_proto)
+  return computation_building_blocks.CompiledComputation(pruned_proto)
 
 
 def bind_graph_parameter_as_tuple(comp, name=None):
@@ -271,8 +318,9 @@ def bind_graph_parameter_as_tuple(comp, name=None):
           initialize_op=proto.tensorflow.initialize_op,
           parameter=new_parameter_binding,
           result=proto.tensorflow.result))
+  pruned_proto = prune_tensorflow_proto(input_padded_proto)
 
-  return computation_building_blocks.CompiledComputation(input_padded_proto)
+  return computation_building_blocks.CompiledComputation(pruned_proto)
 
 
 def bind_graph_result_as_tuple(comp, name=None):
@@ -321,8 +369,9 @@ def bind_graph_result_as_tuple(comp, name=None):
           initialize_op=proto.tensorflow.initialize_op,
           parameter=proto.tensorflow.parameter,
           result=new_result_binding))
+  pruned_proto = prune_tensorflow_proto(result_as_tuple_proto)
 
-  return computation_building_blocks.CompiledComputation(result_as_tuple_proto)
+  return computation_building_blocks.CompiledComputation(pruned_proto)
 
 
 def pad_graph_inputs_to_match_type(comp, type_signature):
@@ -450,8 +499,9 @@ def pad_graph_inputs_to_match_type(comp, type_signature):
           initialize_op=proto.tensorflow.initialize_op,
           parameter=new_parameter_binding,
           result=proto.tensorflow.result))
+  pruned_proto = prune_tensorflow_proto(input_padded_proto)
 
-  return computation_building_blocks.CompiledComputation(input_padded_proto)
+  return computation_building_blocks.CompiledComputation(pruned_proto)
 
 
 def _unpack_proto_into_graph_spec(tf_block_proto):
@@ -684,7 +734,8 @@ def concatenate_tensorflow_blocks(tf_comp_list, output_name_list):
 
   constructed_proto = pb.Computation(
       type=serialized_function_type, tensorflow=tf_result_proto)
-  return computation_building_blocks.CompiledComputation(constructed_proto)
+  pruned_proto = prune_tensorflow_proto(constructed_proto)
+  return computation_building_blocks.CompiledComputation(pruned_proto)
 
 
 def compose_tensorflow_blocks(tf_comps):
@@ -768,7 +819,8 @@ def compose_tensorflow_blocks(tf_comps):
 
   constructed_proto = pb.Computation(
       type=serialized_function_type, tensorflow=tf_result_proto)
-  return computation_building_blocks.CompiledComputation(constructed_proto)
+  pruned_proto = prune_tensorflow_proto(constructed_proto)
+  return computation_building_blocks.CompiledComputation(pruned_proto)
 
 
 class CalledCompositionOfTensorFlowBlocks(transformation_utils.TransformSpec):
@@ -1190,7 +1242,7 @@ class LambdaToCalledTupleOfSelectionsFromArg(transformation_utils.TransformSpec
                                /    \
             CompiledComputation(x)   Tuple
                                     / ... \
-                          Selection(x)     Selection(y)
+                          Selection(a)     Selection(b)
                                |                |
                             Ref(arg)           Ref(arg)
 

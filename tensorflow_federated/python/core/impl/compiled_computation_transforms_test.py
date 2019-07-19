@@ -28,6 +28,7 @@ import tensorflow as tf
 from tensorflow_federated.python.common_libs import anonymous_tuple
 from tensorflow_federated.python.core.api import computation_types
 from tensorflow_federated.python.core.impl import compiled_computation_transforms
+from tensorflow_federated.python.core.impl import computation_building_block_utils
 from tensorflow_federated.python.core.impl import computation_building_blocks
 from tensorflow_federated.python.core.impl import computation_wrapper_instances
 from tensorflow_federated.python.core.impl import context_stack_impl
@@ -39,6 +40,73 @@ def _create_compiled_computation(py_fn, arg_type):
   proto, _ = tensorflow_serialization.serialize_py_fn_as_tf_computation(
       py_fn, arg_type, context_stack_impl.context_stack)
   return computation_building_blocks.CompiledComputation(proto)
+
+
+class PruneTensorFlowProtoTest(absltest.TestCase):
+
+  def test_raises_on_none(self):
+    with self.assertRaises(TypeError):
+      compiled_computation_transforms.prune_tensorflow_proto(None)
+
+  def test_raises_on_compiled_computation(self):
+
+    def fn(x):
+      return x
+
+    comp = _create_compiled_computation(fn, tf.int32)
+    with self.assertRaises(TypeError):
+      compiled_computation_transforms.prune_tensorflow_proto(comp)
+
+  def test_does_not_reduce_no_unnecessary_ops(self):
+
+    def fn(x):
+      return x
+
+    comp = _create_compiled_computation(fn, tf.int32)
+    pruned = computation_building_blocks.CompiledComputation(
+        compiled_computation_transforms.prune_tensorflow_proto(comp.proto))
+    ops_before = computation_building_block_utils.count_tensorflow_ops_in(comp)
+    ops_after = computation_building_block_utils.count_tensorflow_ops_in(pruned)
+    self.assertEqual(ops_before, ops_after)
+
+  def test_reduces_unnecessary_ops(self):
+
+    def bad_fn(x):
+      # pylint: disable=unused-variable
+      a = tf.constant(0)
+      # pylint: enable=unused-variable
+      return x
+
+    comp = _create_compiled_computation(bad_fn, tf.int32)
+    ops_before = computation_building_block_utils.count_tensorflow_ops_in(comp)
+    reduced_proto = compiled_computation_transforms.prune_tensorflow_proto(
+        comp.proto)
+    reduced_comp = computation_building_blocks.CompiledComputation(
+        reduced_proto)
+    ops_after = computation_building_block_utils.count_tensorflow_ops_in(
+        reduced_comp)
+    self.assertLess(ops_after, ops_before)
+
+  def test_prune_does_not_change_exeuction(self):
+
+    def bad_fn(x):
+      # pylint: disable=unused-variable
+      a = tf.constant(0)
+      # pylint: enable=unused-variable
+      return x
+
+    comp = _create_compiled_computation(bad_fn, tf.int32)
+    reduced_proto = compiled_computation_transforms.prune_tensorflow_proto(
+        comp.proto)
+    reduced_comp = computation_building_blocks.CompiledComputation(
+        reduced_proto)
+
+    orig_executable = computation_wrapper_instances.building_block_to_computation(
+        comp)
+    reduced_executable = computation_wrapper_instances.building_block_to_computation(
+        reduced_comp)
+    for k in range(5):
+      self.assertEqual(orig_executable(k), reduced_executable(k))
 
 
 class CompiledComputationTransformsTest(parameterized.TestCase):

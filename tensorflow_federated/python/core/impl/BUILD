@@ -64,6 +64,7 @@ py_test(
     srcs = ["compiled_computation_transforms_test.py"],
     deps = [
         ":compiled_computation_transforms",
+        ":computation_building_block_utils",
         ":computation_building_blocks",
         ":computation_wrapper_instances",
         ":context_stack_impl",
